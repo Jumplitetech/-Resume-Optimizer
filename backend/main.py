@@ -18,6 +18,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib import colors
 
 app = FastAPI(title="JumpLite Resume Optimizer", version="1.0.0")
+client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -259,10 +260,8 @@ def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
 async def score_only(
     resume: UploadFile = File(...),
     job_description: str = Form(...),
-    api_key: str = Form(...)
 ):
     try:
-        client = anthropic.Anthropic(api_key=api_key)
         file_bytes = await resume.read()
         
         if resume.filename.lower().endswith('.pdf'):
@@ -290,10 +289,8 @@ async def score_only(
 async def optimize_resume(
     resume: UploadFile = File(...),
     job_description: str = Form(...),
-    api_key: str = Form(...)
 ):
     try:
-        client = anthropic.Anthropic(api_key=api_key)
         file_bytes = await resume.read()
         
         if resume.filename.lower().endswith('.pdf'):
