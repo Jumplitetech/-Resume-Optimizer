@@ -17,8 +17,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib import colors
 
-
-app.add_middleware(
+    app = FastAPI(title="JumpLite Resume Optimizer", version="1.0.0")
+    app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
