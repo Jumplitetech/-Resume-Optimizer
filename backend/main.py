@@ -21,7 +21,10 @@ app = FastAPI(title="JumpLite Resume Optimizer", version="1.0.0")
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://www.jumplitetech.org",
+        "https://jumplitetech.org",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
