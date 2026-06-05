@@ -13,7 +13,7 @@ from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib import colors
 
@@ -145,46 +145,55 @@ Return this exact JSON:
     raw = re.sub(r'\s*```$', '', raw)
     return json.loads(raw)
 
-def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
+def create_optimized_pdf(resume_text: str, metadata: dict, original_score: dict = None, new_score: dict = None) -> str:
     output_path = tempfile.mktemp(suffix=".pdf")
-    
+
     doc = SimpleDocTemplate(
         output_path,
         pagesize=letter,
         rightMargin=inch,
         leftMargin=inch,
-        topMargin=0.75*inch,
-        bottomMargin=0.75*inch,
+        topMargin=0.75 * inch,
+        bottomMargin=0.75 * inch,
         title=metadata.get("title", "Resume"),
         author="",
         subject=metadata.get("subject", "Resume Application"),
         creator="Microsoft Word",
         producer="Microsoft Word",
     )
-    
+
     styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle(
-        'ResumeTitle',
+
+    name_style = ParagraphStyle(
+        'CandidateName',
         parent=styles['Normal'],
-        fontSize=14,
+        fontSize=18,
         fontName='Helvetica-Bold',
         alignment=TA_CENTER,
-        spaceAfter=4,
-        textColor=colors.HexColor('#1B3A6B')
+        spaceAfter=2,
+        textColor=colors.black,
     )
-    
+
+    contact_style = ParagraphStyle(
+        'ContactInfo',
+        parent=styles['Normal'],
+        fontSize=10,
+        fontName='Helvetica',
+        alignment=TA_CENTER,
+        spaceAfter=10,
+        textColor=colors.black,
+    )
+
     section_style = ParagraphStyle(
         'SectionHeader',
         parent=styles['Normal'],
         fontSize=11,
         fontName='Helvetica-Bold',
-        spaceBefore=12,
-        spaceAfter=4,
-        textColor=colors.HexColor('#1B3A6B'),
-        borderPadding=(0, 0, 2, 0),
+        spaceBefore=14,
+        spaceAfter=2,
+        textColor=colors.black,
     )
-    
+
     body_style = ParagraphStyle(
         'ResumeBody',
         parent=styles['Normal'],
@@ -192,8 +201,9 @@ def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
         fontName='Helvetica',
         spaceAfter=3,
         leading=14,
+        textColor=colors.black,
     )
-    
+
     bullet_style = ParagraphStyle(
         'ResumeBullet',
         parent=styles['Normal'],
@@ -203,43 +213,102 @@ def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
         leading=13,
         leftIndent=16,
         bulletIndent=4,
+        textColor=colors.black,
     )
-    
+
     story = []
+
+    # ATS optimization summary box
+    if original_score and new_score:
+        orig_ats = original_score.get('score', 'N/A')
+        new_ats = new_score.get('score', 'N/A')
+        orig_tier = original_score.get('review_tier', 'N/A')
+        new_tier = new_score.get('review_tier', 'N/A')
+
+        orig_keywords = set(original_score.get('present_keywords', []))
+        new_keywords = set(new_score.get('present_keywords', []))
+        added = list(new_keywords - orig_keywords)[:8]
+        added_str = ', '.join(added) if added else 'None'
+
+        summary_data = [
+            ['ATS OPTIMIZATION SUMMARY', '', ''],
+            ['', 'Before', 'After'],
+            ['ATS Score', str(orig_ats), str(new_ats)],
+            ['Review Tier', orig_tier, new_tier],
+            ['Keywords Added', added_str, ''],
+        ]
+
+        col_widths = [1.8 * inch, 1.5 * inch, 3.2 * inch]
+        summary_table = Table(summary_data, colWidths=col_widths)
+        summary_table.setStyle(TableStyle([
+            ('SPAN', (0, 0), (2, 0)),
+            ('SPAN', (1, 4), (2, 4)),
+            ('ALIGN', (0, 0), (2, 0), 'CENTER'),
+            ('ALIGN', (0, 1), (2, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (2, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (2, 1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 2), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 2), (2, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (2, -1), 9),
+            ('TEXTCOLOR', (0, 0), (2, -1), colors.black),
+            ('BACKGROUND', (0, 0), (2, -1), colors.white),
+            ('BOX', (0, 0), (2, -1), 0.75, colors.black),
+            ('INNERGRID', (0, 0), (2, -1), 0.25, colors.black),
+            ('TOPPADDING', (0, 0), (2, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (2, -1), 4),
+            ('LEFTPADDING', (0, 0), (2, -1), 6),
+            ('RIGHTPADDING', (0, 0), (2, -1), 6),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 18))
+
+    SECTION_KEYWORDS = {
+        'PROFESSIONAL SUMMARY', 'SUMMARY', 'EXPERIENCE', 'WORK EXPERIENCE',
+        'EDUCATION', 'SKILLS', 'CERTIFICATIONS', 'QUALIFICATIONS',
+        'OBJECTIVE', 'PROJECTS', 'ACHIEVEMENTS', 'AWARDS', 'LANGUAGES',
+    }
+
     lines = resume_text.split('\n')
-    
-    for i, line in enumerate(lines):
-        line = line.strip()
+    first_name_done = False
+    contact_done = False
+
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
         if not line:
             story.append(Spacer(1, 4))
             continue
-        
-        if i == 0 and len(line) < 60:
-            story.append(Paragraph(line, title_style))
-        elif (line.isupper() and len(line) < 50) or (
-            any(keyword in line.upper() for keyword in [
-                'PROFESSIONAL SUMMARY', 'EXPERIENCE', 'EDUCATION',
-                'SKILLS', 'CERTIFICATIONS', 'QUALIFICATIONS', 'OBJECTIVE'
-            ])
-        ):
-            story.append(Paragraph(line, section_style))
-        elif line.startswith('•') or line.startswith('-') or line.startswith('*'):
+
+        upper = line.upper()
+        is_section = (
+            (line.isupper() and len(line) < 60) or
+            any(kw in upper for kw in SECTION_KEYWORDS)
+        )
+        is_bullet = line[0] in ('•', '-', '*')
+
+        if not first_name_done and len(line) < 60 and not any(c in line for c in ('@', '|', ':')):
+            story.append(Paragraph(line, name_style))
+            first_name_done = True
+        elif first_name_done and not contact_done and any(c in line for c in ('@', '|', '(', '+', '/')):
+            story.append(Paragraph(line, contact_style))
+            contact_done = True
+        elif is_section:
+            story.append(Paragraph(upper, section_style))
+            story.append(HRFlowable(width="100%", thickness=0.75, color=colors.black, spaceAfter=4))
+        elif is_bullet:
             clean = line.lstrip('•-* ').strip()
             story.append(Paragraph(f'• {clean}', bullet_style))
         else:
             story.append(Paragraph(line, body_style))
-    
+
     doc.build(story)
-    
+
     reader = PdfReader(output_path)
     writer = PdfWriter()
-    
     for page in reader.pages:
         writer.add_page(page)
-    
+
     now = datetime.now()
     date_str = now.strftime("D:%Y%m%d%H%M%S")
-    
     writer.add_metadata({
         '/Title': metadata.get('title', 'Resume'),
         '/Author': '',
@@ -250,11 +319,11 @@ def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
         '/CreationDate': date_str,
         '/ModDate': date_str,
     })
-    
+
     final_path = tempfile.mktemp(suffix="_optimized.pdf")
     with open(final_path, 'wb') as f:
         writer.write(f)
-    
+
     os.unlink(output_path)
     return final_path
 
@@ -310,7 +379,7 @@ async def optimize_resume(
         rewritten_text = rewrite_resume(client, resume_text, job_description, original_score.get('missing_keywords', []))
         new_score = score_resume(client, rewritten_text, job_description)
         metadata = generate_metadata(client, rewritten_text, job_description)
-        pdf_path = create_optimized_pdf(rewritten_text, metadata)
+        pdf_path = create_optimized_pdf(rewritten_text, metadata, original_score, new_score)
         
         return {
             "success": True,
