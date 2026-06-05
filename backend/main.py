@@ -13,7 +13,7 @@ from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib import colors
 
@@ -145,7 +145,7 @@ Return this exact JSON:
     raw = re.sub(r'\s*```$', '', raw)
     return json.loads(raw)
 
-def create_optimized_pdf(resume_text: str, metadata: dict, original_score: dict = None, new_score: dict = None) -> str:
+def create_optimized_pdf(resume_text: str, metadata: dict) -> str:
     output_path = tempfile.mktemp(suffix=".pdf")
 
     doc = SimpleDocTemplate(
@@ -216,58 +216,13 @@ def create_optimized_pdf(resume_text: str, metadata: dict, original_score: dict 
         textColor=colors.black,
     )
 
-    story = []
-
-    # ATS optimization summary box
-    if original_score and new_score:
-        orig_ats = original_score.get('score', 'N/A')
-        new_ats = new_score.get('score', 'N/A')
-        orig_tier = original_score.get('review_tier', 'N/A')
-        new_tier = new_score.get('review_tier', 'N/A')
-
-        orig_keywords = set(original_score.get('present_keywords', []))
-        new_keywords = set(new_score.get('present_keywords', []))
-        added = list(new_keywords - orig_keywords)[:8]
-        added_str = ', '.join(added) if added else 'None'
-
-        summary_data = [
-            ['ATS OPTIMIZATION SUMMARY', '', ''],
-            ['', 'Before', 'After'],
-            ['ATS Score', str(orig_ats), str(new_ats)],
-            ['Review Tier', orig_tier, new_tier],
-            ['Keywords Added', added_str, ''],
-        ]
-
-        col_widths = [1.8 * inch, 1.5 * inch, 3.2 * inch]
-        summary_table = Table(summary_data, colWidths=col_widths)
-        summary_table.setStyle(TableStyle([
-            ('SPAN', (0, 0), (2, 0)),
-            ('SPAN', (1, 4), (2, 4)),
-            ('ALIGN', (0, 0), (2, 0), 'CENTER'),
-            ('ALIGN', (0, 1), (2, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (2, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (2, 1), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 2), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 2), (2, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (2, -1), 9),
-            ('TEXTCOLOR', (0, 0), (2, -1), colors.black),
-            ('BACKGROUND', (0, 0), (2, -1), colors.white),
-            ('BOX', (0, 0), (2, -1), 0.75, colors.black),
-            ('INNERGRID', (0, 0), (2, -1), 0.25, colors.black),
-            ('TOPPADDING', (0, 0), (2, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (2, -1), 4),
-            ('LEFTPADDING', (0, 0), (2, -1), 6),
-            ('RIGHTPADDING', (0, 0), (2, -1), 6),
-        ]))
-        story.append(summary_table)
-        story.append(Spacer(1, 18))
-
     SECTION_KEYWORDS = {
         'PROFESSIONAL SUMMARY', 'SUMMARY', 'EXPERIENCE', 'WORK EXPERIENCE',
         'EDUCATION', 'SKILLS', 'CERTIFICATIONS', 'QUALIFICATIONS',
         'OBJECTIVE', 'PROJECTS', 'ACHIEVEMENTS', 'AWARDS', 'LANGUAGES',
     }
 
+    story = []
     lines = resume_text.split('\n')
     first_name_done = False
     contact_done = False
@@ -279,9 +234,11 @@ def create_optimized_pdf(resume_text: str, metadata: dict, original_score: dict 
             continue
 
         upper = line.upper()
+        # Only treat a line as a section header if it IS a known keyword (exact match)
+        # or is already fully uppercase and short — never substring-match body text
         is_section = (
-            (line.isupper() and len(line) < 60) or
-            any(kw in upper for kw in SECTION_KEYWORDS)
+            upper in SECTION_KEYWORDS or
+            (line.isupper() and len(line) < 50)
         )
         is_bullet = line[0] in ('•', '-', '*')
 
@@ -379,7 +336,7 @@ async def optimize_resume(
         rewritten_text = rewrite_resume(client, resume_text, job_description, original_score.get('missing_keywords', []))
         new_score = score_resume(client, rewritten_text, job_description)
         metadata = generate_metadata(client, rewritten_text, job_description)
-        pdf_path = create_optimized_pdf(rewritten_text, metadata, original_score, new_score)
+        pdf_path = create_optimized_pdf(rewritten_text, metadata)
         
         return {
             "success": True,
